@@ -66,7 +66,7 @@ int main() {
     cudaMemcpy(c,dc,size,cudaMemcpyDeviceToHost);
 
     double timeuse = (t2.tv_sec - t1.tv_sec) + (double)(t2.tv_usec - t1.tv_usec)/1000000.0;
-    cout << timeuse << endl;
+    cout << "Runtime: " << timeuse << "(s)" << endl;
 
     // 释放内存
     cudaFree(da);
