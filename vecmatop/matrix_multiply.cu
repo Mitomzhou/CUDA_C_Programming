@@ -204,7 +204,7 @@ int main()
     cudaEventCreate(&gpustart);
     cudaEventCreate(&gpustop);
     cudaEventRecord(gpustart, 0);
-    matrixMultiplyShared << < grid, block >> > (d_A, d_B, d_C, M, K, K, N, M, N);
+    matrixMultiplyShared <<< grid, block >>> (d_A, d_B, d_C, M, K, K, N, M, N);
     cudaDeviceSynchronize();
     cudaEventRecord(gpustop, 0);
     cudaEventSynchronize(gpustop);
