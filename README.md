@@ -1,5 +1,20 @@
 #CUDA加速
 ### 一、环境安装
+GCC & G++ 降级
+~~~bash
+因为Ubuntu20.04自带的gcc版本为9.3，而cuda10.1不支持gcc-9，因此要手动安装gcc-7
+sudo apt-get install gcc-7 g++-7
+安装完gcc-7，系统中就存在两个版本的gcc，因此要设置默认的gcc，命令如下：
+sudo update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-7 9
+sudo update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-9 1
+此命令可以通过update-alternatives设置gcc各版本的优先级，优先级最高的为系统默认版本，可以用下述命令显示其优先级：
+sudo update-alternatives --display gcc
+设置默认的g++也是如此：
+sudo update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-7 9
+sudo update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-9 1
+显示g++优先级：
+sudo update-alternatives --display g++
+~~~
 NVIDIA-11.2驱动安装
 ~~~bash
 ubuntu-drivers devices
