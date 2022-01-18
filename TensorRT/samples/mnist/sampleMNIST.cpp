@@ -103,14 +103,10 @@ private:
             mMeanBlob; //! the mean blob, which we need to keep around until build is done
 };
 
-//!
-//! \brief Creates the network, configures the builder and creates the network engine
-//!
-//! \details This function creates the MNIST network by parsing the caffe model and builds
-//!          the engine that will be used to run MNIST (mEngine)
-//!
-//! \return Returns true if the engine was created successfully and false otherwise
-//!
+/**
+ * 通过解析caffe模型创建MNIST网络，并构建用于运行MNIST（mEngine）的引擎
+ * @return
+ */
 bool SampleMNIST::build()
 {
     auto builder = SampleUniquePtr<nvinfer1::IBuilder>(nvinfer1::createInferBuilder(gLogger.getTRTLogger()));
@@ -121,7 +117,7 @@ bool SampleMNIST::build()
     constructNetwork(parser, network);
 
     builder->setMaxBatchSize(mParams.batchSize);
-    config->setMaxWorkspaceSize(16_MiB);
+    config->setMaxWorkspaceSize(16_MiB); // 需要额外的显存
     config->setFlag(BuilderFlag::kGPU_FALLBACK);
     config->setFlag(BuilderFlag::kSTRICT_TYPES);
     if (mParams.fp16)
@@ -133,17 +129,11 @@ bool SampleMNIST::build()
         config->setFlag(BuilderFlag::kINT8);
     }
 
-    // DLA：NVIDIA硬件的一个平台
+    // DLA：NVIDIA硬件的一个平台,基本用不到
     // samplesCommon::enableDLA(builder.get(), config.get(), mParams.dlaCore);
 
+    // 返回一个初始化好的cuda推理引擎
     mEngine = std::shared_ptr<nvinfer1::ICudaEngine>(builder->buildEngineWithConfig(*network, *config), samplesCommon::InferDeleter());
-
-    if (!mEngine)
-        return false;
-
-    assert(network->getNbInputs() == 1);
-    mInputDims = network->getInput(0)->getDimensions();
-    assert(mInputDims.nbDims == 3);
 
     return true;
 }
