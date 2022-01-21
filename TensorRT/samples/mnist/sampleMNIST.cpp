@@ -14,15 +14,13 @@
  * limitations under the License.
  */
 
-//! \file sampleMNIST.cpp
-//! \brief This file contains the implementation of the MNIST sample.
-//!
-//! It builds a TensorRT engine by importing a trained MNIST Caffe model. It uses the engine to run
-//! inference on an input image of a digit.
-//! It can be run with the following command line:
-//! Command: ./sample_mnist [-h or --help] [-d=/path/to/data/dir or --datadir=/path/to/data/dir]
-
-// https://zhuanlan.zhihu.com/p/111413911
+// \file sampleMNIST.cpp
+// \brief This file contains the implementation of the MNIST sample.
+//
+// It builds a TensorRT engine by importing a trained MNIST Caffe model. It uses the engine to run
+// inference on an input image of a digit.
+// It can be run with the following command line:
+// Command: ./sample_mnist [-h or --help] [-d=/path/to/data/dir or --datadir=/path/to/data/dir]
 
 #include "argsParser.h"
 #include "buffers.h"
@@ -32,75 +30,37 @@
 #include "NvCaffeParser.h"
 #include "NvInfer.h"
 
-#include <algorithm>
 #include <cassert>
 #include <cmath>
-#include <cuda_runtime_api.h>
-#include <fstream>
 #include <iostream>
-#include <sstream>
 
 const std::string gSampleName = "TensorRT.sample_mnist";
 
-//!
-//! \brief  The SampleMNIST class implements the MNIST sample
-//!
-//! \details It creates the network using a trained Caffe MNIST classification model
-//!
+/**
+ * The SampleMNIST class implements the MNIST sample.
+ * It creates the network using a trained Caffe MNIST classification model
+ */
 class SampleMNIST
 {
     template <typename T>
     using SampleUniquePtr = std::unique_ptr<T, samplesCommon::InferDeleter>;
 
 public:
-    SampleMNIST(const samplesCommon::CaffeSampleParams& params)
-            : mParams(params)
-    {
-    }
+    SampleMNIST(const samplesCommon::CaffeSampleParams& params): mParams(params){ }
 
-    //!
-    //! \brief Builds the network engine
-    //!
     bool build();
-
-    //!
-    //! \brief Runs the TensorRT inference engine for this sample
-    //!
     bool infer();
-
-    //!
-    //! \brief Used to clean up any state created in the sample class
-    //!
     bool teardown();
 
 private:
-    //!
-    //! \brief uses a Caffe parser to create the MNIST Network and marks the
-    //!        output layers
-    //!
-    void constructNetwork(
-            SampleUniquePtr<nvcaffeparser1::ICaffeParser>& parser, SampleUniquePtr<nvinfer1::INetworkDefinition>& network);
+    void constructNetwork(SampleUniquePtr<nvcaffeparser1::ICaffeParser>& parser, SampleUniquePtr<nvinfer1::INetworkDefinition>& network);
+    bool processInput(const samplesCommon::BufferManager& buffers, const std::string& inputTensorName, int inputFileIdx) const;
+    bool verifyOutput(const samplesCommon::BufferManager& buffers, const std::string& outputTensorName, int groundTruthDigit) const;
 
-    //!
-    //! \brief Reads the input and mean data, preprocesses, and stores the result in a managed buffer
-    //!
-    bool processInput(
-            const samplesCommon::BufferManager& buffers, const std::string& inputTensorName, int inputFileIdx) const;
-
-    //!
-    //! \brief Verifies that the output is correct and prints it
-    //!
-    bool verifyOutput(
-            const samplesCommon::BufferManager& buffers, const std::string& outputTensorName, int groundTruthDigit) const;
-
-    std::shared_ptr<nvinfer1::ICudaEngine> mEngine{nullptr}; //!< The TensorRT engine used to run the network
-
-    samplesCommon::CaffeSampleParams mParams; //!< The parameters for the sample.
-
-    nvinfer1::Dims mInputDims; //!< The dimensions of the input to the network.
-
-    SampleUniquePtr<nvcaffeparser1::IBinaryProtoBlob>
-            mMeanBlob; //! the mean blob, which we need to keep around until build is done
+    std::shared_ptr<nvinfer1::ICudaEngine> mEngine{nullptr}; //< The TensorRT engine used to run the network
+    samplesCommon::CaffeSampleParams mParams; //< The parameters for the sample.
+    nvinfer1::Dims mInputDims; //< The dimensions of the input to the network.
+    SampleUniquePtr<nvcaffeparser1::IBinaryProtoBlob> mMeanBlob; // the mean blob, which we need to keep around until build is done
 };
 
 /**
@@ -114,10 +74,13 @@ bool SampleMNIST::build()
     auto config = SampleUniquePtr<nvinfer1::IBuilderConfig>(builder->createBuilderConfig());
     auto parser = SampleUniquePtr<nvcaffeparser1::ICaffeParser>(nvcaffeparser1::createCaffeParser());
 
+    // 使用caffe解析器创建MNIST网络并标记输出层
     constructNetwork(parser, network);
 
+    // batch大小
     builder->setMaxBatchSize(mParams.batchSize);
-    config->setMaxWorkspaceSize(16_MiB); // 需要额外的显存
+    // 最大显存
+    config->setMaxWorkspaceSize(16_MiB);
     config->setFlag(BuilderFlag::kGPU_FALLBACK);
     config->setFlag(BuilderFlag::kSTRICT_TYPES);
     if (mParams.fp16)
@@ -129,18 +92,30 @@ bool SampleMNIST::build()
         config->setFlag(BuilderFlag::kINT8);
     }
 
-    // DLA：NVIDIA硬件的一个平台,基本用不到
+    // LDA核心 NVIDIA硬件的一个平台,基本用不到
     // samplesCommon::enableDLA(builder.get(), config.get(), mParams.dlaCore);
 
     // 返回一个初始化好的cuda推理引擎
-    mEngine = std::shared_ptr<nvinfer1::ICudaEngine>(builder->buildEngineWithConfig(*network, *config), samplesCommon::InferDeleter());
+    mEngine = std::shared_ptr<nvinfer1::ICudaEngine>(
+            builder->buildEngineWithConfig(*network, *config), samplesCommon::InferDeleter());
+
+    if (!mEngine)
+        return false;
+
+    assert(network->getNbInputs() == 1);
+    mInputDims = network->getInput(0)->getDimensions();
+    assert(mInputDims.nbDims == 3);
 
     return true;
 }
 
-//!
-//! \brief Reads the input and mean data, preprocesses, and stores the result in a managed buffer
-//!
+/**
+ * Reads the input and mean data, preprocesses, and stores the result in a managed buffer
+ * @param buffers
+ * @param inputTensorName
+ * @param inputFileIdx
+ * @return
+ */
 bool SampleMNIST::processInput(
         const samplesCommon::BufferManager& buffers, const std::string& inputTensorName, int inputFileIdx) const
 {
@@ -170,9 +145,13 @@ bool SampleMNIST::processInput(
     return true;
 }
 
-//!
-//! \brief Verifies that the output is correct and prints it
-//!
+/**
+ * Verifies that the output is correct and prints it
+ * @param buffers
+ * @param outputTensorName
+ * @param groundTruthDigit
+ * @return
+ */
 bool SampleMNIST::verifyOutput(
         const samplesCommon::BufferManager& buffers, const std::string& outputTensorName, int groundTruthDigit) const
 {
@@ -199,14 +178,11 @@ bool SampleMNIST::verifyOutput(
     return (idx == groundTruthDigit && val > 0.9f);
 }
 
-//!
-//! \brief Uses a caffe parser to create the MNIST Network and marks the
-//!        output layers
-//!
-//! \param network Pointer to the network that will be populated with the MNIST network
-//!
-//! \param builder Pointer to the engine builder
-//!
+/**
+ * 构建网络
+ * @param parser
+ * @param network
+ */
 void SampleMNIST::constructNetwork(
         SampleUniquePtr<nvcaffeparser1::ICaffeParser>& parser, SampleUniquePtr<nvinfer1::INetworkDefinition>& network)
 {
@@ -215,39 +191,32 @@ void SampleMNIST::constructNetwork(
 
     for (auto& s : mParams.outputTensorNames)
     {
-        // 标注输出节点
         network->markOutput(*blobNameToTensor->find(s.c_str()));
     }
 
     // add mean subtraction to the beginning of the network
     nvinfer1::Dims inputDims = network->getInput(0)->getDimensions();
-    mMeanBlob
-            = SampleUniquePtr<nvcaffeparser1::IBinaryProtoBlob>(parser->parseBinaryProto(mParams.meanFileName.c_str()));
+    // 读取均值文件数据
+    mMeanBlob = SampleUniquePtr<nvcaffeparser1::IBinaryProtoBlob>(parser->parseBinaryProto(mParams.meanFileName.c_str()));
     nvinfer1::Weights meanWeights{nvinfer1::DataType::kFLOAT, mMeanBlob->getData(), inputDims.d[1] * inputDims.d[2]};
-    // For this sample, a large range based on the mean data is chosen and applied to the head of the network.
-    // After the mean subtraction occurs, the range is expected to be between -127 and 127, so the rest of the network
-    // is given a generic range.
-    // The preferred method is use scales computed based on a representative data set
-    // and apply each one individually based on the tensor. The range here is large enough for the
-    // network, but is chosen for example purposes only.
-    float maxMean
-            = samplesCommon::getMaxValue(static_cast<const float*>(meanWeights.values), samplesCommon::volume(inputDims));
+    // 数据的原始分布是[0,256], 减去均值后分布[-127, 127]
+    float maxMean = samplesCommon::getMaxValue(static_cast<const float*>(meanWeights.values), samplesCommon::volume(inputDims));
 
     auto mean = network->addConstant(nvinfer1::Dims3(1, inputDims.d[1], inputDims.d[2]), meanWeights);
     mean->getOutput(0)->setDynamicRange(-maxMean, maxMean);
     network->getInput(0)->setDynamicRange(-maxMean, maxMean);
+    // 减均值操作
     auto meanSub = network->addElementWise(*network->getInput(0), *mean->getOutput(0), ElementWiseOperation::kSUB);
     meanSub->getOutput(0)->setDynamicRange(-maxMean, maxMean);
     network->getLayer(0)->setInput(0, *meanSub->getOutput(0));
+    // 缩放,输出[-1,1]
     samplesCommon::setAllTensorScales(network.get(), 127.0f, 127.0f);
 }
 
-//!
-//! \brief Runs the TensorRT inference engine for this sample
-//!
-//! \details This function is the main execution function of the sample. It allocates
-//!          the buffer, sets inputs, executes the engine, and verifies the output.
-//!
+/**
+ * 推理：配置缓冲区,设置输入,执行推理引擎并验证输出
+ * @return
+ */
 bool SampleMNIST::infer()
 {
     // Create RAII buffer manager object
@@ -299,43 +268,48 @@ bool SampleMNIST::infer()
     return outputCorrect;
 }
 
-//!
-//! \brief Used to clean up any state created in the sample class
-//!
+/**
+ * Used to clean up any state created in the sample class
+ * @return
+ */
 bool SampleMNIST::teardown()
 {
-    //! Clean up the libprotobuf files as the parsing is complete
-    //! \note It is not safe to use any other part of the protocol buffers library after
-    //! ShutdownProtobufLibrary() has been called.
+    // Clean up the libprotobuf files as the parsing is complete
+    // note It is not safe to use any other part of the protocol buffers library after
+    // ShutdownProtobufLibrary() has been called.
     nvcaffeparser1::shutdownProtobufLibrary();
     return true;
 }
 
-//!
-//! \brief Initializes members of the params struct using the command line args
-//!
+/**
+ * 命令行参数初始化params结构成员
+ * @param args
+ * @return
+ */
 samplesCommon::CaffeSampleParams initializeSampleParams(const samplesCommon::Args& args)
 {
     samplesCommon::CaffeSampleParams params;
-    if (args.dataDirs.empty()) //!< Use default directories if user hasn't provided directory paths
+    // 默认路径
+    if (args.dataDirs.empty())
     {
         params.dataDirs.push_back("data/mnist/");
         params.dataDirs.push_back("data/samples/mnist/");
     }
-    else //!< Use the data directory provided by the user
+    else
     {
         params.dataDirs = args.dataDirs;
     }
 
+    // 配置文件
     params.prototxtFileName = locateFile("mnist.prototxt", params.dataDirs);
     params.weightsFileName = locateFile("mnist.caffemodel", params.dataDirs);
-    params.meanFileName = locateFile("mnist_mean.binaryproto", params.dataDirs);
-    params.inputTensorNames.push_back("data");
+    params.meanFileName = locateFile("mnist_mean.binaryproto", params.dataDirs); // 网络均值文件
+    params.inputTensorNames.push_back("data"); // 输入Tensor
     params.batchSize = 1;
-    params.outputTensorNames.push_back("prob");
-    params.dlaCore = args.useDLACore;
-    params.int8 = args.runInInt8;
-    params.fp16 = args.runInFp16;
+    params.outputTensorNames.push_back("prob"); // 输出Tensor
+    params.dlaCore = args.useDLACore; // 是否使用DLA核心
+    params.int8 = args.runInInt8;     // 以INT8的方式运行
+    params.fp16 = args.runInFp16;     // 以FP16的方式运行
 
     return params;
 }
@@ -346,8 +320,6 @@ int main(int argc, char** argv)
     samplesCommon::Args args;
 
     auto sampleTest = gLogger.defineTest(gSampleName, argc, argv);
-
-    gLogger.reportTestStart(sampleTest);
 
     // 1.命令行参数初始化params结构成员
     samplesCommon::CaffeSampleParams params = initializeSampleParams(args);
