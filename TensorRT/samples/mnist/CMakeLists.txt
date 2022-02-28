@@ -11,10 +11,13 @@ set(LOGGER ${TENSORRT_SOURCE}/samples/common/logger.cpp)  # 需要单独导入
 file(GLOB TENSORRT_LIB "${TENSORRT_LIB_PATH}/*.so")
 
 # add CUDA
-find_package(CUDA 10.1 REQUIRED)
+find_package(CUDA 10.2 REQUIRED)
 message("CUDA_LIBRARIES:${CUDA_LIBRARIES}")
 message("CUDA_INCLUDE_DIRS:${CUDA_INCLUDE_DIRS}")
 include_directories(${CUDA_INCLUDE_DIRS})
 
-add_executable(sampleMNIST sampleMNIST.cpp ${LOGGER})
-target_link_libraries(sampleMNIST ${TENSORRT_LIB} ${CUDA_LIBRARIES})
+add_executable(sampleCaffeMNIST sampleCaffeMNIST.cpp ${LOGGER})
+target_link_libraries(sampleCaffeMNIST ${TENSORRT_LIB} ${CUDA_LIBRARIES})
+
+add_executable(sampleOnnxMNIST sampleOnnxMNIST.cpp ${LOGGER})
+target_link_libraries(sampleOnnxMNIST ${TENSORRT_LIB} ${CUDA_LIBRARIES})

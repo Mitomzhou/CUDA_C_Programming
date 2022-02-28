@@ -276,7 +276,6 @@ samplesCommon::CaffeSampleParams initializeSampleParams(const samplesCommon::Arg
     if (args.dataDirs.empty())
     {
         params.dataDirs.push_back("data/mnist/");
-        params.dataDirs.push_back("data/samples/mnist/");
     }
     else
     {
